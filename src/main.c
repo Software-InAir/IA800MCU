@@ -4,12 +4,15 @@
 #define BUF_SIZE        4096
 #define OUTPUT_RAW_HEX  0   /* 0 = decoded, 1 = raw hex */
 #define MAX_CHARS 17
-char decoded_str[MAX_CHARS + 1];   // +1 for null terminator
+char decoded_str1[MAX_CHARS + 1];   // +1 for null terminator
+char decoded_str2[MAX_CHARS + 1];
 
 
 /* ================== GLOBALS ================== */
-volatile uint8_t  capture_buf[BUF_SIZE];
-volatile uint32_t capture_len = 0;
+volatile uint8_t  capture_buf1[BUF_SIZE];
+volatile uint8_t capture_buf2[BUF_SIZE];
+volatile uint32_t capture_len1 = 0;
+volatile uint32_t capture_len2 = 0;
 
 /* ================== UART ================== */
 static void uart_send_char(char c)
@@ -61,7 +64,6 @@ void build_and_print_payload(const char *message)
 
     uint16_t msg_len = (uint16_t)strlen(message);
 
-    /* === Python binascii.hexlify equivalent === */
     for (uint16_t i = 0; i < msg_len; i++)
     {
         payload[payload_len++] = (uint8_t)message[i];
@@ -94,6 +96,8 @@ void build_and_print_payload(const char *message)
 
     write_command[write_len++] = (uint8_t)(crc & 0xFF);
     write_command[write_len++] = (uint8_t)(crc >> 8);
+
+//---------------------------Payload built constructed and intiliazed.
 
     /* ---------------- Debug Output ---------------- */
 #ifdef DEBUG_PRINT
@@ -136,10 +140,6 @@ static void uart_delay_equivalent(uint8_t chars)
     GPIOA->MODER = moder;
 }
 
-
-
-
-
 /* ================== LUT ================== */
 /* Pattern 2 LUT ONLY */
 static const char char_lut[256] = {
@@ -150,21 +150,24 @@ static const char char_lut[256] = {
     [0x0A] = 'E',
     [0x0B] = 'F',
     [0x0C] = 'G',
-    /*[0x0F] = 'I',*/
+    //[0x02] = 'H',
+    //[0x0F] = 'I',
     [0x10] = 'J',
     [0x12] = 'K',
     [0x14] = 'L',
     [0x16] = 'M',
     [0x18] = 'N',
-    [0x19] = 'O',
+    //[0x19] = 'O',
+    //[0x0B] = 'P',
     [0x1A] = 'Q',
     [0x1B] = 'R',
-    [0x0D] = 'S',
-    [0x0E] = 'T',
-    [0x09] = 'U',
+    [0x1D] = 'S',
+    [0x1E] = 'T',
+    [0x19] = 'U',
     [0x1F] = 'V',
     [0x21] = 'W',
     [0x23] = 'X',
+    //[0x1E] = 'Y',
     [0x25] = 'Z',
     [0x0F] = '1',
     [0x28] = '2',
@@ -175,12 +178,69 @@ static const char char_lut[256] = {
     [0x30] = '7',
     [0x32] = '8',
     [0x34] = '9',
-    [0x00] = ' '
+    //[0x19] = '0' Not needed, prints O for 0 on hardware.
+    [0x00] = ' ',
+    [0x53] = '!',
+    [0x36] = '%',
+    [0x3C] = '>',
+    [0x38] = '*',
+    [0x4D] = '-',
+    [0x40] = '<'
 };
 
-static inline int lut_valid(uint8_t v)
+static const char char_lut2[256] = {
+    //[0x01] = 'A',
+    [0x03] = 'B',
+    [0x05] = 'C',
+    [0x07] = 'D',
+    [0x09] = 'E', 
+    //[0x09] = 'F',
+    //[0x05] = 'G',
+    [0x0D] = 'H',
+    [0x0E] = 'I',
+    //[0x0E] = 'J',
+    [0x11] = 'K',
+    [0x13] = 'L',
+    [0x15] = 'M',
+    [0x17] = 'N',
+    //[0x01] = 'O',
+    //[0x03] = 'P',
+    //[0x01] = 'Q',
+    //[0x03] = 'R',
+    [0x1C] = 'S',
+    //[0x0E] = 'T',
+    //[0x0D] = 'U',
+    //[0x0D] = 'V',
+    [0x20] = 'W',
+    //[0x22] = 'X',
+    [0x22] = 'Y',
+    [0x24] = 'Z',
+    [0x26] = '1',
+    [0x27] = '2',
+    //[0x27] = '3',
+    [0x2A] = '4',
+    //[0x09] = '5',
+    [0x2D] = '6',
+    [0x2F] = '7',
+    [0x31] = '8',
+    [0x33] = '9',
+    [0x01] = '0',
+    [0x52] = '!',
+    [0x35] = '%',
+    [0x3B] = '>',
+    [0x37] = '*',
+    [0x4C] = '-',
+    [0x3F] = '<'
+};
+
+static inline int lut_valid1(uint8_t v)
 {
     return char_lut[v] != 0;
+}
+
+static inline int lut_valid2(uint8_t v)
+{
+    return char_lut2[v] != 0;
 }
 
 /* ================== MAIN ================== */
@@ -207,6 +267,8 @@ int main(void)
     USART2->BRR  = SystemCoreClock / 115200;
     USART2->CR1  = USART_CR1_TE | USART_CR1_RE | USART_CR1_UE;
 
+    // ------------------------------ STM32 SETUP COMPLETE
+
     uart_send_str("\r\nSTM32 Capture Ready\r\n");
 
     uint8_t prev_vsync = 0;
@@ -220,10 +282,10 @@ int main(void)
         /* VSYNC rising edge */
         if (vsync && !prev_vsync)
         {
-            capture_len = 0;
+            capture_len1 = 0;
+            capture_len2 = 0;
             uart_delay_equivalent(22);
             
-
             /* Capture during VSYNC */
             while ((GPIOB->IDR >> 8) & 1)
             {
@@ -232,8 +294,10 @@ int main(void)
                 /* HSYNC rising edge */
                 //if (hsync && !prev_hsync)
                 //{
-                    if (capture_len < BUF_SIZE)
-                        capture_buf[capture_len++] = GPIOC->IDR & 0xFF;
+                    if (capture_len1 < BUF_SIZE)
+                        capture_buf1[capture_len1++] = GPIOC->IDR & 0xFF;
+                    if (capture_len2 < BUF_SIZE)
+                        capture_buf2[capture_len2++] = GPIOC->IDR & 0xFF;
                 //}
 
                 //prev_hsync = hsync;
@@ -252,41 +316,103 @@ int main(void)
 
 #else
             /* ========= DECODED OUTPUT ========= */
-        uint8_t last = 0;
-        uint8_t first = 1;
-        uint8_t charcounter = 0;
+        uint8_t last1 = 0;
+        uint8_t first1 = 1;
+        uint8_t charcounter1 = 0;
 
-        for (uint32_t i = 0; i < capture_len; i++)
+        uint8_t last2 = 0;
+        uint8_t first2 = 1;
+        uint8_t charcounter2 = 0;
+
+        for (uint32_t i = 0; i < capture_len1; i++)
         {
-            if (charcounter >= MAX_CHARS)
+            if (charcounter1 >= MAX_CHARS)
                 break;
 
-            uint8_t v = capture_buf[i];
+            uint8_t v = capture_buf1[i];
+          
 
-            if ((first || v != last) && lut_valid(v))
+            if ((first1 || v != last1) && lut_valid(v))
             {
-                decoded_str[charcounter++] = char_lut[v];
-                last  = v;
-                first = 0;
+                decoded_str1[charcounter1++] = char_lut[v];
+                last1  = v;
+                first1 = 0;
             }
         }
 
-        /* Null-terminate string */
-        decoded_str[charcounter] = '\0';
+        // -------------------------------- Second capture set stored
+
+        for (uint32_t i = 0; i < capture_len2; i++)
+        {
+            if (charcounter2 >= MAX_CHARS)
+                break;
+
+            uint8_t v2 = capture_buf2[i];
+
+            if ((first2 || v2 != last2) && lut_valid2(v2))
+            {
+                decoded_str2[charcounter2++] = char_lut2[v2];
+                last2  = v2;
+                first2 = 0;
+            }
+        }
+
+        // ------------------------------- First capture set stored
+
+        /* Null-terminate strings */
+        decoded_str1[charcounter1] = '\0';
+        decoded_str2[charcounter2] = '\0';
 
         /* -------- FIX: trim leading spaces / null-derived chars -------- */
-        char *p = decoded_str;
+        char *p = decoded_str1;
+        char *p2 = decoded_str2;
         while (*p == ' ')
             p++;
 
-        if (p != decoded_str)
-            memmove(decoded_str, p, strlen(p) + 1);
-        /* --------------------------------------------------------------- */
+        if (p != decoded_str1)
+            memmove(decoded_str1, p, strlen(p) + 1);
+        
+        while (*p2 == ' ')
+            p2++;
+        
+        if (p2 != decoded_str2)
+            memmove(decoded_str2, p2, strlen(p2) + 1);
 
-        build_and_print_payload(decoded_str);
+    
 
-        /* Now you can "return" it by using it */
-        uart_send_str(decoded_str);
+        for(uint32_t i = 0; i < strlen(decoded_str1); i++)
+        {
+            char c1 = decoded_str1[i];
+            char c2 = decoded_str2[i];
+            
+            //(A, H) = if [0x02], reference decoded_str2[i], if decoded_str1[i] = char_lut2[H] swap [0x02] for char_lut2[H]
+            if(c1 == 'A' && c2 == 'H')
+            {
+                decoded_str1[i] = 'H';
+            }
+            if(c1 == '1' && c2 == 'I')
+            {
+                decoded_str1[i] = 'I';
+            }
+            if(c1 == 'F' && c2 == 'P')
+            {
+                decoded_str1[i] = 'P';
+            }
+            if(c1 == 'U' && c2 == '0')
+            {
+                decoded_str1[i] = 'O';
+            }
+            //(T, Y) = if [0x1E], reference decoded_str2[i], if decoded_str1[i] = char_lut2[Y] swap [0x1E] for char_lut2[Y]
+            if(c1 == 'T' && c2 == 'Y')
+            {
+                decoded_str1[i] = 'Y';
+            }
+            
+        }
+
+        build_and_print_payload(decoded_str1);
+
+        uart_send_str(decoded_str1);
         uart_send_str("\r\n");
 
 
