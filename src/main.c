@@ -422,6 +422,8 @@ static const char citation[256] = {
     [25] = 'ALT OFF'
 }
 
+// still to write.. the f$ck iof
+
 
 static inline int lut_valid1(uint8_t v)
 {
